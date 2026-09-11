@@ -1,0 +1,117 @@
+name: PVDAQ2107 Split Full History
+
+on:
+  push:
+    paths:
+      - '.github/workflows/pvdaq2107-split-full-history.yml'
+  workflow_dispatch:
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download locked official PVDAQ2107 electrical history
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p split_work
+          curl -L --fail --retry 5 --retry-delay 5 \
+            -o split_work/2107_electrical_data.csv \
+            'https://oedi-data-lake.s3.amazonaws.com/pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv'
+          echo 'c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8  split_work/2107_electrical_data.csv' | sha256sum -c -
+
+      - name: Split on CSV row boundaries and build manifest
+        shell: python
+        run: |
+          import csv, hashlib, json, os
+          from pathlib import Path
+
+          src = Path('split_work/2107_electrical_data.csv')
+          out = Path('split_work/chunks')
+          out.mkdir(parents=True, exist_ok=True)
+          target_bytes = 190 * 1024 * 1024
+
+          def sha256(path):
+              h = hashlib.sha256()
+              with open(path, 'rb') as f:
+                  for b in iter(lambda: f.read(1024 * 1024), b''):
+                      h.update(b)
+              return h.hexdigest()
+
+          source_sha = sha256(src)
+          source_bytes = src.stat().st_size
+
+          parts = []
+          with open(src, 'r', encoding='utf-8', newline='') as fin:
+              reader = csv.reader(fin)
+              header = next(reader)
+              part_idx = 1
+              fout = None
+              writer = None
+              rows_in_part = 0
+              total_rows = 0
+              part_path = None
+
+              def open_part(idx):
+                  p = out / f'2107_electrical_data_part_{idx:03d}.csv'
+                  f = open(p, 'w', encoding='utf-8', newline='')
+                  w = csv.writer(f)
+                  w.writerow(header)
+                  return p, f, w
+
+              part_path, fout, writer = open_part(part_idx)
+              for row in reader:
+                  writer.writerow(row)
+                  rows_in_part += 1
+                  total_rows += 1
+                  if fout.tell() >= target_bytes:
+                      fout.close()
+                      parts.append((part_path, rows_in_part))
+                      part_idx += 1
+                      part_path, fout, writer = open_part(part_idx)
+                      rows_in_part = 0
+
+              if fout is not None:
+                  fout.close()
+                  if rows_in_part > 0:
+                      parts.append((part_path, rows_in_part))
+                  else:
+                      part_path.unlink(missing_ok=True)
+
+          manifest = {
+              'source_file': src.name,
+              'source_bytes': source_bytes,
+              'source_sha256': source_sha,
+              'expected_source_sha256': 'c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8',
+              'split_rule': 'CSV row boundaries only; header repeated in each chunk; target max about 190 MiB before row completion',
+              'total_data_rows': total_rows,
+              'parts': []
+          }
+          for p, nrows in parts:
+              manifest['parts'].append({
+                  'file': p.name,
+                  'data_rows': nrows,
+                  'bytes': p.stat().st_size,
+                  'sha256': sha256(p)
+              })
+
+          with open(out / 'SPLIT_MANIFEST.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, indent=2)
+
+          assert source_sha == manifest['expected_source_sha256']
+          assert sum(x['data_rows'] for x in manifest['parts']) == total_rows
+          assert all(x['bytes'] < 256 * 1024 * 1024 for x in manifest['parts'])
+          print(json.dumps(manifest, indent=2))
+
+      - name: Upload split chunks
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvdaq2107-full-history-split
+          path: split_work/chunks/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
