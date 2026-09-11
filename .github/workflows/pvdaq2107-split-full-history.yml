@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download locked official PVDAQ2107 electrical history
+      - name: Download and verify locked official PVDAQ2107 electrical history
         shell: bash
         run: |
           set -euo pipefail
@@ -22,18 +22,23 @@ jobs:
           curl -L --fail --retry 5 --retry-delay 5 \
             -o split_work/2107_electrical_data.csv \
             'https://oedi-data-lake.s3.amazonaws.com/pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv'
-          echo 'c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8  split_work/2107_electrical_data.csv' | sha256sum -c -
+          expected='c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8'
+          actual="$(sha256sum split_work/2107_electrical_data.csv | awk '{print $1}')"
+          echo "expected_sha256=$expected"
+          echo "actual_sha256=$actual"
+          test "$actual" = "$expected"
 
-      - name: Split on CSV row boundaries and build manifest
+      - name: Split losslessly on CSV row boundaries and verify reconstruction
         shell: python
         run: |
-          import csv, hashlib, json, os
+          import hashlib, json
           from pathlib import Path
 
           src = Path('split_work/2107_electrical_data.csv')
           out = Path('split_work/chunks')
           out.mkdir(parents=True, exist_ok=True)
           target_bytes = 190 * 1024 * 1024
+          expected = 'c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8'
 
           def sha256(path):
               h = hashlib.sha256()
@@ -43,51 +48,67 @@ jobs:
               return h.hexdigest()
 
           source_sha = sha256(src)
+          assert source_sha == expected
           source_bytes = src.stat().st_size
 
           parts = []
-          with open(src, 'r', encoding='utf-8', newline='') as fin:
-              reader = csv.reader(fin)
-              header = next(reader)
+          total_rows = 0
+          with open(src, 'rb') as fin:
+              header = fin.readline()
+              if not header:
+                  raise RuntimeError('Source CSV has no header')
+
               part_idx = 1
-              fout = None
-              writer = None
+              part_path = out / f'2107_electrical_data_part_{part_idx:03d}.csv'
+              fout = open(part_path, 'wb')
+              fout.write(header)
               rows_in_part = 0
-              total_rows = 0
-              part_path = None
 
-              def open_part(idx):
-                  p = out / f'2107_electrical_data_part_{idx:03d}.csv'
-                  f = open(p, 'w', encoding='utf-8', newline='')
-                  w = csv.writer(f)
-                  w.writerow(header)
-                  return p, f, w
-
-              part_path, fout, writer = open_part(part_idx)
-              for row in reader:
-                  writer.writerow(row)
-                  rows_in_part += 1
-                  total_rows += 1
-                  if fout.tell() >= target_bytes:
+              for line in fin:
+                  if rows_in_part > 0 and fout.tell() + len(line) > target_bytes:
                       fout.close()
                       parts.append((part_path, rows_in_part))
                       part_idx += 1
-                      part_path, fout, writer = open_part(part_idx)
+                      part_path = out / f'2107_electrical_data_part_{part_idx:03d}.csv'
+                      fout = open(part_path, 'wb')
+                      fout.write(header)
                       rows_in_part = 0
+                  fout.write(line)
+                  rows_in_part += 1
+                  total_rows += 1
 
-              if fout is not None:
-                  fout.close()
-                  if rows_in_part > 0:
-                      parts.append((part_path, rows_in_part))
-                  else:
-                      part_path.unlink(missing_ok=True)
+              fout.close()
+              if rows_in_part > 0:
+                  parts.append((part_path, rows_in_part))
+              else:
+                  part_path.unlink(missing_ok=True)
+
+          reconstructed = Path('split_work/reconstructed.csv')
+          with open(reconstructed, 'wb') as rout:
+              for i, (p, _) in enumerate(parts):
+                  with open(p, 'rb') as pin:
+                      if i > 0:
+                          h = pin.readline()
+                          if h != header:
+                              raise RuntimeError(f'Header mismatch in {p.name}')
+                      for block in iter(lambda: pin.read(1024 * 1024), b''):
+                          rout.write(block)
+
+          reconstructed_sha = sha256(reconstructed)
+          reconstructed_bytes = reconstructed.stat().st_size
+          assert reconstructed_sha == source_sha
+          assert reconstructed_bytes == source_bytes
+          assert all(p.stat().st_size < 256 * 1024 * 1024 for p, _ in parts)
 
           manifest = {
               'source_file': src.name,
               'source_bytes': source_bytes,
               'source_sha256': source_sha,
-              'expected_source_sha256': 'c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8',
-              'split_rule': 'CSV row boundaries only; header repeated in each chunk; target max about 190 MiB before row completion',
+              'expected_source_sha256': expected,
+              'reconstructed_bytes': reconstructed_bytes,
+              'reconstructed_sha256': reconstructed_sha,
+              'reconstruction_exact': True,
+              'split_rule': 'Raw bytes preserved; split only between complete CSV rows; original header repeated in each chunk.',
               'total_data_rows': total_rows,
               'parts': []
           }
@@ -102,16 +123,41 @@ jobs:
           with open(out / 'SPLIT_MANIFEST.json', 'w', encoding='utf-8') as f:
               json.dump(manifest, f, indent=2)
 
-          assert source_sha == manifest['expected_source_sha256']
-          assert sum(x['data_rows'] for x in manifest['parts']) == total_rows
-          assert all(x['bytes'] < 256 * 1024 * 1024 for x in manifest['parts'])
+          if len(parts) != 3:
+              raise RuntimeError(f'Expected 3 chunks at 190 MiB target, found {len(parts)}')
           print(json.dumps(manifest, indent=2))
 
-      - name: Upload split chunks
+      - name: Upload part 001
         uses: actions/upload-artifact@v4
         with:
-          name: pvdaq2107-full-history-split
-          path: split_work/chunks/
+          name: pvdaq2107-part-001
+          path: split_work/chunks/2107_electrical_data_part_001.csv
           if-no-files-found: error
           compression-level: 0
+          retention-days: 30
+
+      - name: Upload part 002
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvdaq2107-part-002
+          path: split_work/chunks/2107_electrical_data_part_002.csv
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload part 003
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvdaq2107-part-003
+          path: split_work/chunks/2107_electrical_data_part_003.csv
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload split manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvdaq2107-split-manifest
+          path: split_work/chunks/SPLIT_MANIFEST.json
+          if-no-files-found: error
           retention-days: 30
