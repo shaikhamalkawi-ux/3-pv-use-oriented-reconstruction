@@ -161,3 +161,5 @@ jobs:
           path: split_work/chunks/SPLIT_MANIFEST.json
           if-no-files-found: error
           retention-days: 30
+
+# retrigger after checksum-command correction
