@@ -1,0 +1,15 @@
+{
+  "stop_rules_pass": true,
+  "stop_reasons": [],
+  "ranking_good_regimes": 9,
+  "aggregate_winners": {
+    "point": ["Iterative SVD"],
+    "energy": ["Iterative SVD"],
+    "spearman": ["Linear Interpolation"],
+    "top1": ["Linear Interpolation"]
+  },
+  "aggregate_winners_differ": true,
+  "any_regime_disagreement": true,
+  "candidate_main_paper_external_result": true,
+  "interpretation_rule": "Supports transferable use-oriented principle only if downstream preferences/agreements differ, or otherwise documents a reproducible transfer boundary; never requires Qatar winner identity."
+}
