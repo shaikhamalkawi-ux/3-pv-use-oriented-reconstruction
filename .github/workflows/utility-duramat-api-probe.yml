@@ -1,0 +1,54 @@
+name: Utility probe migrated DuraMAT HERO file
+
+on:
+  push:
+    paths:
+      - '.github/workflows/utility-duramat-api-probe.yml'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Probe public HERO DataRepo metadata only
+        shell: python
+        run: |
+          import json, ssl, urllib.request, urllib.error
+          from pathlib import Path
+          sslctx=ssl._create_unverified_context()
+          base='https://hero.nlr.gov/data-repo/api/v1'
+          old_file='4b1b201a-d866-4f52-ac6f-6989f7a376df'
+          old_dataset='7cdfed1b-7571-4b28-958e-c62e8f67139b'
+          targets=[
+            f'{base}/file/{old_file}',
+            f'{base}/dataset/{old_dataset}',
+            f'{base}/dataset/{old_dataset}/files',
+            f'{base}/files?datasetId={old_dataset}',
+            f'{base}/file/metatype/File?name=2019-2024%20IV%20Curves%20BLIND.csv&datasetId={old_dataset}',
+            f'{base}/files/download/{old_file}',
+            f'{base}/file/{old_file}/download',
+          ]
+          out=[]
+          for url in targets:
+              req=urllib.request.Request(url,headers={'Accept':'application/json','User-Agent':'DuraMAT-Paper2-migration-probe/1.0'})
+              try:
+                  with urllib.request.urlopen(req,context=sslctx,timeout=30) as r:
+                      body=r.read(200000)
+                      out.append({'url':url,'status':r.status,'final_url':r.geturl(),'content_type':r.headers.get('Content-Type'),'location':r.headers.get('Location'),'body':body.decode('utf-8','replace')})
+              except urllib.error.HTTPError as e:
+                  body=e.read(200000)
+                  out.append({'url':url,'status':e.code,'content_type':e.headers.get('Content-Type'),'location':e.headers.get('Location'),'body':body.decode('utf-8','replace')})
+              except Exception as e:
+                  out.append({'url':url,'error':repr(e)})
+          Path('duramat_api_probe.json').write_text(json.dumps(out,indent=2),encoding='utf-8')
+          print(json.dumps(out,indent=2))
+      - name: Upload probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: duramat-api-probe
+          path: duramat_api_probe.json
+          if-no-files-found: error
+          retention-days: 7
