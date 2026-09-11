@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite the associated manuscript and this software repository."
+title: "PV Use-Oriented Reconstruction"
+type: software
+authors:
+  - family-names: Malkawi
+    given-names: Ghassan
+    email: gmalkawi@hct.ac.ae
+year: 2026
+repository-code: "https://github.com/shaikhamalkawi-ux/3-pv-use-oriented-reconstruction"
+keywords:
+  - photovoltaic
+  - missing data
+  - reconstruction
+  - imputation
+  - downstream evaluation
+  - energy preservation
+  - ranking
