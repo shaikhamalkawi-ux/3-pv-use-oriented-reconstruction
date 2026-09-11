@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Pre-outcome schema adapter for the frozen PVDAQ2107 analysis.
+"""Pre-outcome implementation adapter for the frozen PVDAQ2107 analysis.
 
 Scientific logic is loaded unchanged from run_pvdaq2107_transfer.py.
-This adapter only accepts the documented current header typo/variant by
-selecting inverter AC-power columns with ^inv_\\d+_ac_power_ and still
-requires exactly inverter indices 1..24.
+This adapter implements two protocol-fidelity fixes identified before any
+outcome was accepted: (1) robust selection of the documented inverter-15
+AC-power header typo/variant, while still requiring IDs 1..24 exactly; and
+(2) masked-cell balancing across the 12 frozen breadth-duration regimes for
+training and validation example generation.
 """
 import importlib.util
 import json
@@ -12,6 +14,7 @@ import re
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 _CORE_PATH = Path(__file__).with_name('run_pvdaq2107_transfer.py')
@@ -30,6 +33,15 @@ def _arg_value(flag):
         return None
 
 
+def _output_dir():
+    value = _arg_value('--output-dir')
+    if value is None:
+        return None
+    p = Path(value)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def load_ac_power_schemafixed(csv_path, expected_n=24):
     header = pd.read_csv(csv_path, nrows=0).columns.tolist()
     ts_col = header[0]
@@ -43,11 +55,9 @@ def load_ac_power_schemafixed(csv_path, expected_n=24):
             f'found IDs {ids} in {len(ac)} channels'
         )
 
-    out_dir = _arg_value('--output-dir')
-    if out_dir:
-        p = Path(out_dir)
-        p.mkdir(parents=True, exist_ok=True)
-        with open(p / 'selected_ac_power_columns.json', 'w', encoding='utf-8') as f:
+    out = _output_dir()
+    if out is not None:
+        with open(out / 'selected_ac_power_columns.json', 'w', encoding='utf-8') as f:
             json.dump(
                 {
                     'selector': r'^inv_\d+_ac_power_',
@@ -55,6 +65,17 @@ def load_ac_power_schemafixed(csv_path, expected_n=24):
                     'inverter_ids': ids,
                     'columns': ac,
                     'schema_note': 'Inverter 15 is currently labelled inv_15_ac_power_iinv_149653; no value derivation or renaming is performed.'
+                },
+                f,
+                indent=2,
+            )
+        with open(out / 'source_time_handling.json', 'w', encoding='utf-8') as f:
+            json.dump(
+                {
+                    'metadata_timezone_code': 'PST8PDT',
+                    'handling': 'Published timestamp labels are retained in source order as local naive labels; no UTC conversion is applied.',
+                    'duplicate_policy': 'If exact timestamp labels are duplicated, all duplicated labels are conservatively excluded by the frozen core before splitting/masking.',
+                    'cadence_policy': 'The modal positive source interval is inferred and continuity is required at every admitted mask.'
                 },
                 f,
                 indent=2,
@@ -71,7 +92,81 @@ def load_ac_power_schemafixed(csv_path, expected_n=24):
     return df, ac, duplicate_rows, header
 
 
+def random_training_cells_balanced(norm_df, allowed_dates, breadths, lengths,
+                                   target_cells, seed, min_peer_frac, out_range,
+                                   cadence_min, corr, prefix):
+    """Generate approximately equal masked-cell quotas per frozen regime."""
+    rng = np.random.default_rng(seed)
+    arr = norm_df.to_numpy(float)
+    idx = norm_df.index
+    pos_by_date = core.date_positions(idx, allowed_dates)
+    dkeys = list(pos_by_date)
+    if not dkeys:
+        raise RuntimeError('No admitted dates available for balanced training-mask generation')
+
+    regimes = [(int(b), int(L)) for b in breadths for L in lengths]
+    base = target_cells // len(regimes)
+    rem = target_cells % len(regimes)
+    quotas = {reg: base + (1 if i < rem else 0) for i, reg in enumerate(regimes)}
+    realized = {reg: 0 for reg in regimes}
+
+    X, Xc, y = [], [], []
+    for ri, (b, L) in enumerate(regimes):
+        quota = quotas[(b, L)]
+        attempts = 0
+        max_attempts = max(20000, quota * 50)
+        maskno = 0
+        while realized[(b, L)] < quota and attempts < max_attempts:
+            attempts += 1
+            d = dkeys[int(rng.integers(0, len(dkeys)))]
+            pos = pos_by_date[d]
+            if len(pos) < L + 2:
+                continue
+            start = int(pos[int(rng.integers(1, max(2, len(pos) - L - 1)))])
+            hidden = tuple(sorted(rng.choice(arr.shape[1], size=b, replace=False).tolist()))
+            if not core.mask_valid(arr, idx, start, L, hidden, cadence_min, out_range, min_peer_frac):
+                continue
+            maskno += 1
+            m = core.Mask(f'{prefix}_b{b}_l{L}_{maskno}', str(idx[start]), str(d), start, L, b, hidden)
+            xb, yb, _ = core.feature_rows(norm_df, m, corr, False)
+            xc, _, _ = core.feature_rows(norm_df, m, corr, True)
+            need = quota - realized[(b, L)]
+            if len(yb) > need:
+                take = np.arange(len(yb))
+                rng.shuffle(take)
+                take = take[:need]
+                xb = xb[take]
+                xc = xc[take]
+                yb = yb[take]
+            X.append(xb)
+            Xc.append(xc)
+            y.append(yb)
+            realized[(b, L)] += len(yb)
+        if realized[(b, L)] < quota:
+            raise RuntimeError(
+                f'Balanced generation shortfall for breadth={b}, length={L}: '
+                f'{realized[(b, L)]}/{quota} cells after {attempts} attempts'
+            )
+
+    out = _output_dir()
+    if out is not None:
+        with open(out / f'{prefix}_cell_balance.json', 'w', encoding='utf-8') as f:
+            json.dump(
+                {
+                    'target_cells': int(target_cells),
+                    'regime_quotas': {f'b{b}_l{L}': int(quotas[(b, L)]) for b, L in regimes},
+                    'realized_cells': {f'b{b}_l{L}': int(realized[(b, L)]) for b, L in regimes},
+                    'total_realized': int(sum(realized.values()))
+                },
+                f,
+                indent=2,
+            )
+
+    return np.vstack(X), np.vstack(Xc), np.concatenate(y)
+
+
 core.load_ac_power = load_ac_power_schemafixed
+core.random_training_cells = random_training_cells_balanced
 
 if __name__ == '__main__':
     core.main()
