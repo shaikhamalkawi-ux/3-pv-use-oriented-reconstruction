@@ -1,0 +1,32 @@
+name: Utility acquire public DuraMAT BEST CSV
+
+on:
+  push:
+    paths:
+      - '.github/workflows/utility-duramat-best-acquire.yml'
+  workflow_dispatch:
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download public DuraMAT BEST repeated IV CSV
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p duramat_source
+          curl -L --fail --retry 5 --retry-delay 3 \
+            -o duramat_source/2019-2024-iv-curves-blind.csv \
+            'https://datahub.duramat.org/dataset/7cdfed1b-7571-4b28-958e-c62e8f67139b/resource/4b1b201a-d866-4f52-ac6f-6989f7a376df/download/2019-2024-iv-curves-blind.csv'
+          sha256sum duramat_source/2019-2024-iv-curves-blind.csv | tee duramat_source/SHA256.txt
+          wc -c duramat_source/2019-2024-iv-curves-blind.csv | tee duramat_source/BYTES.txt
+      - name: Upload public source
+        uses: actions/upload-artifact@v4
+        with:
+          name: duramat-best-public-source
+          path: duramat_source/
+          if-no-files-found: error
+          retention-days: 30
