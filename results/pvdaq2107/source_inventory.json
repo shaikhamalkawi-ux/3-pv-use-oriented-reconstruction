@@ -1,0 +1,20 @@
+{
+  "source_url": "https://oedi-data-lake.s3.amazonaws.com/pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv",
+  "s3_key": "pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv",
+  "sha256": "c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5accaf5f4d83c4988fd91d74d8",
+  "bytes": 438569900,
+  "raw_rows_after_duplicate_exclusion": 632952,
+  "duplicate_timestamp_rows_excluded": 0,
+  "raw_columns": 120,
+  "ac_power_channels": 24,
+  "first_timestamp": "2017-11-01 00:00:00",
+  "last_timestamp": "2023-11-07 23:55:00",
+  "inferred_cadence_minutes": 5.0,
+  "admitted_dates": 2151,
+  "train_dates": 1290,
+  "validation_dates": 430,
+  "test_dates": 431,
+  "train_first_last": ["2017-11-01", "2021-06-03"],
+  "validation_first_last": ["2021-06-04", "2022-09-01"],
+  "test_first_last": ["2022-09-02", "2023-11-06"]
+}
