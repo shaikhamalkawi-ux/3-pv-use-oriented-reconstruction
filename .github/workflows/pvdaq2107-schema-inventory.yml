@@ -1,0 +1,36 @@
+name: PVDAQ2107 Schema Inventory
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pvdaq2107-schema-inventory.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read public PVDAQ header only
+        run: |
+          mkdir -p schema_inventory
+          python - <<'PY'
+          import csv, json, urllib.request
+          url='https://oedi-data-lake.s3.amazonaws.com/pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv'
+          req=urllib.request.Request(url,headers={'Range':'bytes=0-65535','User-Agent':'PVDAQ2107-schema-inventory/1.0'})
+          with urllib.request.urlopen(req,timeout=120) as r:
+              text=r.read(65536).decode('utf-8',errors='replace')
+          header=next(csv.reader([text.splitlines()[0]]))
+          report={'column_count':len(header),'columns':header,'ac_power_contains':[c for c in header if 'ac_power' in c.lower()],'power_contains':[c for c in header if 'power' in c.lower()]}
+          print(json.dumps(report,indent=2))
+          with open('schema_inventory/header_inventory.json','w') as f: json.dump(report,f,indent=2)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pvdaq2107-schema-inventory
+          path: schema_inventory/header_inventory.json
+          retention-days: 30
