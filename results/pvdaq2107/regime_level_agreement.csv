@@ -1,0 +1,13 @@
+breadth,length,point_winners,energy_winners,spearman_winners,top1_winners,point_energy_agree,point_spearman_agree,point_top1_agree
+1,1,Linear Interpolation,Linear Interpolation,,,1,,
+1,3,Masked Context,Linear Interpolation,,,0,,
+1,12,Iterative SVD,Iterative SVD,,,1,,
+2,1,Masked Context,Linear Interpolation,Linear Interpolation,Linear Interpolation,0,0.0,0.0
+2,3,Iterative SVD,Iterative SVD,Iterative SVD,Iterative SVD,1,1.0,1.0
+2,12,Iterative SVD,Iterative SVD,Iterative SVD|Linear Interpolation,Iterative SVD|Linear Interpolation,1,1.0,1.0
+4,1,Iterative SVD,Iterative SVD,Linear Interpolation,Linear Interpolation,1,0.0,0.0
+4,3,Masked Context,Iterative SVD,Linear Interpolation,Linear Interpolation,0,0.0,0.0
+4,12,Iterative SVD,Iterative SVD,Linear Interpolation,Linear Interpolation,1,0.0,0.0
+8,1,Correlation Summary,Iterative SVD,Linear Interpolation,Linear Interpolation,0,0.0,0.0
+8,3,Iterative SVD,Iterative SVD,Linear Interpolation,Linear Interpolation,1,0.0,0.0
+8,12,Iterative SVD,Iterative SVD,Linear Interpolation,Linear Interpolation,1,0.0,0.0
