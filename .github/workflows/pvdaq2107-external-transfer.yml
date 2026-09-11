@@ -1,0 +1,51 @@
+name: PVDAQ2107 External Transfer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'protocols/PVDAQ2107_EXTERNAL_TRANSFER_FROZEN_v1.md'
+      - 'protocols/PVDAQ2107_EXTERNAL_TRANSFER_FROZEN_v1.sha256.txt'
+      - 'config/pvdaq2107_frozen_config.json'
+      - 'analysis/run_pvdaq2107_transfer.py'
+      - 'analysis/requirements-pvdaq2107.txt'
+      - '.github/workflows/pvdaq2107-external-transfer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen environment
+        run: python -m pip install --upgrade pip && pip install -r analysis/requirements-pvdaq2107.txt
+      - name: Run PVDAQ2107 frozen external-transfer analysis
+        run: |
+          mkdir -p raw/pvdaq2107 results/pvdaq2107
+          python analysis/run_pvdaq2107_transfer.py \
+            --config config/pvdaq2107_frozen_config.json \
+            --raw-dir raw/pvdaq2107 \
+            --output-dir results/pvdaq2107 \
+            | tee results/pvdaq2107/workflow_stdout.log
+      - name: Record source-code hashes
+        run: |
+          sha256sum \
+            protocols/PVDAQ2107_EXTERNAL_TRANSFER_FROZEN_v1.md \
+            config/pvdaq2107_frozen_config.json \
+            analysis/run_pvdaq2107_transfer.py \
+            analysis/requirements-pvdaq2107.txt \
+            > results/pvdaq2107/analysis_source_sha256.txt
+      - name: Upload reproducibility results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvdaq2107-external-transfer-results
+          path: results/pvdaq2107
+          if-no-files-found: error
+          retention-days: 30
