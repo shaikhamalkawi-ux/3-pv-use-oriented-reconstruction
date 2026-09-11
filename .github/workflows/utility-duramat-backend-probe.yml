@@ -1,0 +1,79 @@
+name: Utility probe current DuraMAT HERO backend
+
+on:
+  push:
+    paths:
+      - '.github/workflows/utility-duramat-backend-probe.yml'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Probe current frontend and HERO SDK configuration
+        shell: python
+        run: |
+          import json,re,ssl,urllib.request
+          from pathlib import Path
+          ssl._create_default_https_context = ssl._create_unverified_context
+          out=Path('duramat_probe'); out.mkdir(exist_ok=True)
+          def get(url):
+              req=urllib.request.Request(url,headers={'User-Agent':'DuraMAT-Paper2-schema-probe/1.0'})
+              with urllib.request.urlopen(req,timeout=60,context=ssl._create_unverified_context()) as r:
+                  b=r.read(); return b,r.headers.get('Content-Type',''),r.geturl()
+          base='https://datahub-duramat.nlr.gov'
+          html,ct,fu=get(base+'/dataset/7cdfed1b-7571-4b28-958e-c62e8f67139b/resource/4b1b201a-d866-4f52-ac6f-6989f7a376df')
+          (out/'frontend.html').write_bytes(html)
+          text=html.decode('utf-8','replace')
+          scripts=re.findall(r'<script[^>]+src=["\']([^"\']+)',text)
+          report={'frontend_final_url':fu,'frontend_content_type':ct,'frontend_bytes':len(html),'scripts':scripts,'downloaded_js':[],'interesting':[]}
+          queue=[]
+          for s in scripts:
+              if s.startswith('http'): u=s
+              elif s.startswith('/'): u=base+s
+              else: u=base+'/'+s.lstrip('./')
+              queue.append(u)
+          seen=set()
+          while queue and len(seen)<50:
+              u=queue.pop(0)
+              if u in seen: continue
+              seen.add(u)
+              try: b,c,f=get(u)
+              except Exception as e:
+                  report['downloaded_js'].append({'url':u,'error':repr(e)}); continue
+              if 'javascript' not in c.lower() and not u.endswith('.js'): continue
+              name=u.rsplit('/',1)[-1]
+              (out/name).write_bytes(b)
+              t=b.decode('utf-8','replace')
+              report['downloaded_js'].append({'url':u,'bytes':len(b),'content_type':c})
+              # webpack chunk names from maps such as 499.<hash>.js
+              for m in re.finditer(r'(\d{1,4})[.:]["\']?([0-9a-f]{8,32})["\']?',t):
+                  cid,h=m.group(1),m.group(2)
+                  cu=f'{base}/js/{cid}.{h}.js'
+                  if cu not in seen and cu not in queue: queue.append(cu)
+              for term in ['HERO_DATA_REPO_API_URL','HERO_BASE_URL','services','thesource.nlr.gov','files/download','dataRepoId','readFileDownloadUrl']:
+                  start=0
+                  while True:
+                      i=t.find(term,start)
+                      if i<0: break
+                      report['interesting'].append({'file':name,'term':term,'context':t[max(0,i-1000):min(len(t),i+1800)]})
+                      start=i+len(term)
+                      if sum(1 for x in report['interesting'] if x['file']==name and x['term']==term)>=5: break
+          (out/'backend_probe.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+          # compact string inventory, no scientific CSV contents
+          urls=[]
+          for p in out.glob('*.js'):
+              t=p.read_text(errors='replace')
+              urls += re.findall(r'https?://[^"\'\\\s)]+',t)
+          (out/'url_inventory.txt').write_text('\n'.join(sorted(set(urls))),encoding='utf-8')
+          print(json.dumps({'js_count':len(report['downloaded_js']),'interesting_count':len(report['interesting']),'urls':sorted(set(urls))[:100]},indent=2))
+      - name: Upload backend probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: duramat-current-backend-probe
+          path: duramat_probe/
+          if-no-files-found: error
+          retention-days: 7
