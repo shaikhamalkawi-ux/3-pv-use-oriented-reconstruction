@@ -22,7 +22,7 @@ jobs:
           curl -L --fail --retry 5 --retry-delay 5 \
             -o split_work/2107_electrical_data.csv \
             'https://oedi-data-lake.s3.amazonaws.com/pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv'
-          expected='c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8'
+          expected='c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5accaf5f4d83c4988fd91d74d8'
           actual="$(sha256sum split_work/2107_electrical_data.csv | awk '{print $1}')"
           echo "expected_sha256=$expected"
           echo "actual_sha256=$actual"
@@ -38,7 +38,7 @@ jobs:
           out = Path('split_work/chunks')
           out.mkdir(parents=True, exist_ok=True)
           target_bytes = 190 * 1024 * 1024
-          expected = 'c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5acaf5f4d83c4988fd91d74d8'
+          expected = 'c6d8402ee90ffbeb22cd32e5c371b66dbd0b3e5accaf5f4d83c4988fd91d74d8'
 
           def sha256(path):
               h = hashlib.sha256()
