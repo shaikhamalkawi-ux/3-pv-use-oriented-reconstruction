@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Pre-outcome schema adapter for the frozen PVDAQ2107 analysis.
 
-Scientific logic is imported unchanged from run_pvdaq2107_transfer.py.
+Scientific logic is loaded unchanged from run_pvdaq2107_transfer.py.
 This adapter only accepts the documented current header typo/variant by
 selecting inverter AC-power columns with ^inv_\\d+_ac_power_ and still
 requires exactly inverter indices 1..24.
 """
+import importlib.util
 import json
 import re
 import sys
@@ -13,7 +14,13 @@ from pathlib import Path
 
 import pandas as pd
 
-import analysis.run_pvdaq2107_transfer as core
+_CORE_PATH = Path(__file__).with_name('run_pvdaq2107_transfer.py')
+_SPEC = importlib.util.spec_from_file_location('pvdaq2107_frozen_core', _CORE_PATH)
+if _SPEC is None or _SPEC.loader is None:
+    raise RuntimeError(f'Cannot load frozen core analysis from {_CORE_PATH}')
+core = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = core
+_SPEC.loader.exec_module(core)
 
 
 def _arg_value(flag):
