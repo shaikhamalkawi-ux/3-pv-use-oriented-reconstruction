@@ -1,0 +1,40 @@
+{
+  "protocol_version": "PVDAQ2107_EXTERNAL_TRANSFER_FROZEN_v1",
+  "seed": 2107,
+  "source": {
+    "electrical_url": "https://oedi-data-lake.s3.amazonaws.com/pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv",
+    "s3_bucket": "oedi-data-lake",
+    "s3_key": "pvdaq/2023-solar-data-prize/2107_OEDI/data/2107_electrical_data.csv",
+    "expected_system_id": 2107,
+    "expected_inverters": 24
+  },
+  "split_fractions": [0.6, 0.2, 0.2],
+  "normalization_quantile": 0.995,
+  "primary_output_range": [0.05, 0.95],
+  "breadths": [1, 2, 4, 8],
+  "gap_samples": [1, 3, 12],
+  "test_masks_per_regime": 20,
+  "validation_masks_per_regime": 8,
+  "mask_buffer_samples": 12,
+  "min_unhidden_peer_fraction": 0.75,
+  "train_cells_target": 100000,
+  "validation_cells_target": 20000,
+  "knn_train_cap": 30000,
+  "svd_ranks": [1, 2, 4, 8],
+  "ridge_alphas": [0.001, 0.01, 0.1, 1.0, 10.0],
+  "knn_k": [3, 5, 10, 20, 50],
+  "lgbm": {
+    "n_estimators": 1000,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "early_stopping_rounds": 50
+  },
+  "bootstrap_reps": 2000,
+  "stop_rules": {
+    "min_total_test_masks": 120,
+    "min_masks_per_regime": 8,
+    "min_ranking_regimes": 6,
+    "min_ranking_masks_per_regime": 8,
+    "min_nonconstant_rank_timestamp_fraction": 0.8
+  }
+}
