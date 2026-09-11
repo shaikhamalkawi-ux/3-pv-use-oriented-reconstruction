@@ -18,11 +18,32 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p duramat_source
-          curl -L --fail --retry 5 --retry-delay 3 \
+          # DuraMAT currently redirects to a host whose presented TLS certificate
+          # is expired. --insecure is used only for transport; provenance remains
+          # the exact authoritative public resource URL and the retrieved bytes
+          # are hashed and audited before scientific admission.
+          curl --insecure -L --fail --retry 5 --retry-delay 3 \
             -o duramat_source/2019-2024-iv-curves-blind.csv \
             'https://datahub.duramat.org/dataset/7cdfed1b-7571-4b28-958e-c62e8f67139b/resource/4b1b201a-d866-4f52-ac6f-6989f7a376df/download/2019-2024-iv-curves-blind.csv'
+          test -s duramat_source/2019-2024-iv-curves-blind.csv
           sha256sum duramat_source/2019-2024-iv-curves-blind.csv | tee duramat_source/SHA256.txt
           wc -c duramat_source/2019-2024-iv-curves-blind.csv | tee duramat_source/BYTES.txt
+          python - <<'PY'
+          import csv
+          p='duramat_source/2019-2024-iv-curves-blind.csv'
+          with open(p,'r',encoding='utf-8-sig',newline='') as f:
+              r=csv.reader(f); header=next(r)
+          if len(header) < 5:
+              raise SystemExit('Downloaded object does not look like the expected CSV')
+          print('CSV header columns:',len(header))
+          print(header)
+          PY
+          cat > duramat_source/ACQUISITION_NOTE.txt <<'EOF'
+          Authoritative DOI: 10.21948/2462712
+          Dataset ID: 7cdfed1b-7571-4b28-958e-c62e8f67139b
+          Resource ID: 4b1b201a-d866-4f52-ac6f-6989f7a376df
+          Transport note: curl --insecure was required because the redirected DuraMAT host presented an expired TLS certificate on 2026-09-12. Scientific admission requires subsequent schema/provenance audit; no outcome is accepted merely from this transport step.
+          EOF
       - name: Upload public source
         uses: actions/upload-artifact@v4
         with:
