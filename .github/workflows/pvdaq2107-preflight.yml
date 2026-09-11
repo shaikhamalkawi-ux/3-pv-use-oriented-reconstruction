@@ -1,0 +1,40 @@
+name: PVDAQ2107 Outcome-Free Preflight
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'analysis/run_pvdaq2107_preflight.py'
+      - '.github/workflows/pvdaq2107-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install preflight environment
+        run: python -m pip install --upgrade pip && pip install -r analysis/requirements-pvdaq2107.txt
+      - name: Run outcome-free preflight
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p raw/pvdaq2107 results/pvdaq2107_preflight
+          python analysis/run_pvdaq2107_preflight.py \
+            --config config/pvdaq2107_frozen_config.json \
+            --raw-dir raw/pvdaq2107 \
+            --output-dir results/pvdaq2107_preflight \
+            2>&1 | tee results/pvdaq2107_preflight/workflow_stdout.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pvdaq2107-outcome-free-preflight
+          path: results/pvdaq2107_preflight
+          if-no-files-found: error
+          retention-days: 30
