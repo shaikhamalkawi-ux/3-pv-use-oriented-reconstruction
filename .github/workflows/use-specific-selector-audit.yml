@@ -1,0 +1,31 @@
+name: Use-Specific Selector Audit
+
+on:
+  push:
+    paths:
+      - 'analysis/audit_use_specific_selector.py'
+      - '.github/workflows/use-specific-selector-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run selector audit
+        run: python analysis/audit_use_specific_selector.py
+      - name: Upload selector audit results
+        uses: actions/upload-artifact@v4
+        with:
+          name: use-specific-selector-audit-results
+          path: results/use_specific_selector_audit/
+          if-no-files-found: error
+          retention-days: 30
