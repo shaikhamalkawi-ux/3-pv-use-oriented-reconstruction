@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, importlib.util, json
+import argparse, importlib.util, json, sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 ROOT=Path(__file__).resolve().parents[1]
-BASE_PATH=ROOT/'analysis'/'run_pvdaq2107_transfer.py'
-spec=importlib.util.spec_from_file_location('base_transfer',BASE_PATH)
-base=importlib.util.module_from_spec(spec); assert spec.loader is not None; spec.loader.exec_module(base)
+ADAPTER_PATH=ROOT/'analysis'/'run_pvdaq2107_transfer_schemafixed.py'
+spec=importlib.util.spec_from_file_location('selector_schemafixed_adapter',ADAPTER_PATH)
+adapter=importlib.util.module_from_spec(spec); assert spec.loader is not None
+sys.modules[spec.name]=adapter
+spec.loader.exec_module(adapter)
+base=adapter.core  # accepted frozen core with schema and balanced-cell pre-outcome fixes applied
 
 
 def evaluate_masks(norm, masks, corr, models, svd_rank):
@@ -79,6 +82,8 @@ def day_bootstrap_policy_delta(test_metrics, selected, reps, seed):
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--config',default=str(ROOT/'config'/'pvdaq2107_frozen_config.json')); ap.add_argument('--output-dir',default=str(ROOT/'results'/'use_specific_selector_audit')); ap.add_argument('--raw-dir',default='raw_selector'); ap.add_argument('--electrical-file',default=None); args=ap.parse_args()
+    # Keep adapter output path aligned with this audit so schema/balance ledgers are retained.
+    sys.argv=['audit_use_specific_selector.py','--output-dir',args.output_dir]
     cfg=json.load(open(args.config)); out=Path(args.output_dir); out.mkdir(parents=True,exist_ok=True); raw=Path(args.raw_dir); raw.mkdir(parents=True,exist_ok=True)
     src=Path(args.electrical_file) if args.electrical_file else raw/'2107_electrical_data.csv'
     if not src.exists(): base.download(cfg['source']['electrical_url'],src)
@@ -98,10 +103,10 @@ def main():
     boot=day_bootstrap_policy_delta(test,selected,cfg['bootstrap_reps'],cfg['seed']+2026)
 
     # Test oracle is descriptive only and never used in selection.
-    test_oracle={'point':testagg.set_index('method')['macro_mae'].idxmin(),
-                 'energy':testagg.set_index('method')['median_energy_abs_pct'].idxmin(),
-                 'ranking':testagg.set_index('method')['mean_spearman'].idxmax()}
+    ta=testagg.set_index('method')
+    test_oracle={'point':ta['macro_mae'].idxmin(),'energy':ta['median_energy_abs_pct'].idxmin(),'ranking':ta['mean_spearman'].idxmax()}
     decision={'scope':'Post-baseline validation-locked selector audit. Test outcomes from the historical benchmark were already known before this audit; this is not preregistered or independent confirmation.',
+              'accepted_implementation_adapter':'run_pvdaq2107_transfer_schemafixed.py',
               'source_sha256':source_hash,'cadence_minutes':cadence,'train_dates':len(trd),'validation_dates':len(vad),'test_dates':len(ted),
               'validation_masks':len(val_masks),'test_masks':len(test_masks),'selected_on_validation':selected,'test_oracle_descriptive_only':test_oracle,
               'bootstrap_test_policy_gains':boot,
