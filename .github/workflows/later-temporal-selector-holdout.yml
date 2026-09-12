@@ -1,0 +1,33 @@
+name: Later Temporal Selector Holdout
+
+on:
+  push:
+    paths:
+      - 'protocols/PVDAQ2107_LATER_TEMPORAL_SELECTOR_HOLDOUT_FROZEN_20260912.md'
+      - 'analysis/run_later_temporal_selector_holdout.py'
+      - '.github/workflows/later-temporal-selector-holdout.yml'
+  workflow_dispatch:
+
+jobs:
+  holdout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen environment
+        run: python -m pip install --upgrade pip && pip install -r analysis/requirements-pvdaq2107.txt
+      - name: Run later temporal holdout
+        run: python analysis/run_later_temporal_selector_holdout.py
+      - name: Upload holdout results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: later-temporal-selector-holdout-results
+          path: results/later_temporal_selector_holdout/
+          if-no-files-found: error
+          retention-days: 30
