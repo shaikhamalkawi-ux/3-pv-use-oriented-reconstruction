@@ -84,7 +84,7 @@ def main():
     norm=later.div(scales,axis=1); cadence=base.infer_cadence_minutes(norm.index); dates=base.admitted_dates_raw(later)
     masks,counts=base.generate_masks(norm,dates,cfg['breadths'],cfg['gap_samples'],cfg['test_masks_per_regime'],42107,cfg['mask_buffer_samples'],cfg['min_unhidden_peer_fraction'],cfg['primary_output_range'],cadence,'later')
     ledger=pd.DataFrame([base.asdict(m) for m in masks]); ledger.to_csv(OUT/'later_mask_ledger.csv',index=False)
-    pd.DataFrame(counts).to_csv(OUT/'later_mask_counts.csv',index=False)
+    pd.DataFrame([counts]).to_csv(OUT/'later_mask_counts.csv',index=False)
 
     mm=metrics_for(norm,masks,2); mm.to_csv(OUT/'later_per_mask_metrics.csv',index=False); agg=aggregate(mm); agg.to_csv(OUT/'later_aggregate_metrics.csv',index=False)
     aa=agg.set_index('method'); spearman_gain=float(aa.loc['Linear Interpolation','mean_spearman']-aa.loc['Iterative SVD','mean_spearman']); top1_gain=float(aa.loc['Linear Interpolation','mean_top1']-aa.loc['Iterative SVD','mean_top1']); boot=day_bootstrap(mm)
